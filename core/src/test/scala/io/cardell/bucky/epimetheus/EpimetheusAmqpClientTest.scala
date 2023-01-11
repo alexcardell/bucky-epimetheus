@@ -41,7 +41,6 @@ trait TestData {
   def getCollector(reg: CollectorRegistry[IO], name: String) =
     IO(CollectorRegistry.Unsafe.asJava(reg))
       .map(_.metricFamilySamples())
-      .map(_.asIterator())
       .map(_.asScala.toList)
       .map(_.find(_.name == s"bucky_$name"))
       .flatMap(
