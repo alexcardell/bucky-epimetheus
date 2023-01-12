@@ -1,5 +1,6 @@
 package io.cardell.bucky.epimetheus
 
+import cats.data.NonEmptyList
 import cats.effect.IO
 import cats.effect.Resource
 import cats.implicits._
@@ -38,7 +39,19 @@ trait TestData {
   object TestWiring
       extends Wiring[TestEvent](name = WiringName("test-event-wiring"))
 
-  def getCollector(reg: CollectorRegistry[IO], name: String) =
+  def exactlyOne[A](ls: List[A]): IO[A] = ls match {
+    case head :: Nil =>
+      IO.pure(head)
+    case _ :: _ :: _ =>
+      IO.raiseError(new Throwable("too many values in list"))
+    case Nil =>
+      IO.raiseError(new Throwable("no values in list"))
+  }
+
+  def getCollector(
+      reg: CollectorRegistry[IO],
+      name: String
+  ) =
     IO(CollectorRegistry.Unsafe.asJava(reg))
       .map(_.metricFamilySamples())
       .map(_.asScala.toList)
@@ -46,12 +59,13 @@ trait TestData {
       .flatMap(
         IO.fromOption(_)(new Throwable(s"could not find collector ${name}"))
       )
-      .map(_.samples.asScala)
-      .map(_.find(_.name == s"bucky_${name}_total"))
+      .map(_.samples.asScala.toList)
+      .map(_.filter { s => s.name == s"bucky_${name}_total" })
+      .map(s => NonEmptyList.fromList(s))
       .flatMap(
         IO.fromOption(_)(new Throwable(s"could not find sample ${name}"))
       )
-      .map(_.value)
+      .map(_.toList)
 }
 
 object TestData extends TestData
@@ -73,11 +87,18 @@ object EpimetheusAmqpClientTest extends IOSuite with TestData {
         epAmqp = EpimetheusAmqpClient[IO](amqp, metrics)
 
         publisher <- TestWiring.publisher(epAmqp)
+
         _ <- publisher(msg)
         c1 <- getCollector(reg, "published_messages")
+          .map(_.filter(_.labelValues.contains("succeeded")))
+          .flatMap(exactlyOne)
+
         _ <- publisher(msg)
         c2 <- getCollector(reg, "published_messages")
-      } yield expect(c1 == 1.0).and(expect(c2 == 2.0))
+          .map(_.filter(_.labelValues.contains("succeeded")))
+          .flatMap(exactlyOne)
+
+      } yield expect(c1.value == 1.0).and(expect(c2.value == 2.0))
     }
   }
 
@@ -100,14 +121,24 @@ object EpimetheusAmqpClientTest extends IOSuite with TestData {
           _ <- TestWiring.registerConsumer(client)(_ => IO(Ack))
         } yield publisher
 
+        val consumedMessages =
+          getCollector(reg, "consumed_messages")
+            .map(
+              _.filter(s =>
+                s.labelValues.contains("ack") &&
+                  s.labelValues.contains("succeeded")
+              )
+            )
+            .flatMap(exactlyOne)
+
         resources.use { publisher =>
           for {
             _ <- publisher(msg)
-            c1 <- getCollector(reg, "consumed_messages")
+            c1 <- consumedMessages
             _ <- publisher(msg)
-            c2 <- getCollector(reg, "consumed_messages")
+            c2 <- consumedMessages
             _ <- IO.sleep(1.second)
-          } yield expect(c1 == 1.0).and(expect(c2 == 2.0))
+          } yield expect(c1.value == 1.0).and(expect(c2.value == 2.0))
         }
       }
     }
