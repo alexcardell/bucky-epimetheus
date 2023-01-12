@@ -9,6 +9,7 @@ package object epimetheus {
 
   type PublishLabel[F[_]] = (PublishCommand, Outcome[F, _, Unit])
 
-  type ConsumeLabel[F[_]] = (Delivery, Option[ConsumeAction])
+  type ConsumeLabel[F[_]] =
+    (Delivery, Option[ConsumeAction], Outcome[F, _, ConsumeAction])
 
 }

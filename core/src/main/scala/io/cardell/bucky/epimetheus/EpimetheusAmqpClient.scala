@@ -1,6 +1,5 @@
 package io.cardell.bucky.epimetheus
 
-import cats.MonadError
 import cats.effect.Resource
 import cats.effect.kernel.MonadCancel
 import cats.effect.kernel.Outcome
@@ -62,7 +61,8 @@ object EpimetheusAmqpMetrics {
         Sized(
           Label("exchange"),
           Label("routing_key"),
-          Label("result")
+          Label("result"),
+          Label("outcome")
         ),
         (labelConsumedMessage[F] _).tupled
       )
@@ -93,7 +93,8 @@ object EpimetheusAmqpMetrics {
 
   private def labelConsumedMessage[F[_]](
       del: Delivery,
-      action: Option[ConsumeAction]
+      action: Option[ConsumeAction],
+      outcome: Outcome[F, _, ConsumeAction]
   ) = {
     def actionString = action match {
       case None                     => "error"
@@ -102,10 +103,17 @@ object EpimetheusAmqpMetrics {
       case Some(RequeueImmediately) => "requeue-immediately"
     }
 
+    val outcomeString = outcome match {
+      case Canceled()   => "canceled"
+      case Succeeded(_) => "succeeded"
+      case Errored(_)   => "errored"
+    }
+
     Sized(
       del.envelope.exchangeName.value,
       del.envelope.routingKey.value,
-      actionString
+      actionString,
+      outcomeString
     )
   }
 }
@@ -130,7 +138,7 @@ object EpimetheusAmqpClient {
   def apply[F[_]](
       amqpClient: AmqpClient[F],
       amqpMetrics: EpimetheusAmqpMetrics[F]
-  )(implicit M: MonadCancel[F, _], E: MonadError[F, _]): AmqpClient[F] =
+  )(implicit M: MonadCancel[F, _]): AmqpClient[F] =
     new AmqpClient[F] {
       def declare(declarations: Declaration*): F[Unit] =
         amqpClient.declare(declarations)
@@ -155,10 +163,19 @@ object EpimetheusAmqpClient {
           shutdownRetry: FiniteDuration
       ): Resource[F, Unit] = {
         val meteredHandler = { (del: Delivery) =>
-          E.attemptTap(handler(del)) { maybeAction =>
-            amqpMetrics.consumedMessages
-              .label((del, maybeAction.toOption))
-              .inc
+          M.guaranteeCase(handler(del)) { outcome =>
+            outcome match {
+              case Succeeded(fa) =>
+                fa.flatMap(action =>
+                  amqpMetrics.consumedMessages
+                    .label((del, Some(action), outcome))
+                    .inc
+                )
+              case _ =>
+                amqpMetrics.consumedMessages
+                  .label((del, None, outcome))
+                  .inc
+            }
           }
         }
 
