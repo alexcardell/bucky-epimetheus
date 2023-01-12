@@ -1,6 +1,7 @@
 package io.cardell.bucky.epimetheus
 
 import cats.effect.Resource
+import cats.effect.kernel.Clock
 import cats.effect.kernel.MonadCancel
 import cats.effect.kernel.Outcome
 import cats.effect.kernel.Outcome.Canceled
@@ -22,6 +23,8 @@ import com.itv.bucky.publish.PublishCommand
 import io.chrisdavenport.epimetheus.CollectorRegistry
 import io.chrisdavenport.epimetheus.Counter
 import io.chrisdavenport.epimetheus.Counter.UnlabelledCounter
+import io.chrisdavenport.epimetheus.Histogram
+import io.chrisdavenport.epimetheus.Histogram.UnlabelledHistogram
 import io.chrisdavenport.epimetheus.Label
 import io.chrisdavenport.epimetheus.Name
 import scala.concurrent.duration.FiniteDuration
@@ -29,7 +32,9 @@ import shapeless.Sized
 
 case class EpimetheusAmqpMetrics[F[_]](
     publishedMessages: UnlabelledCounter[F, PublishLabel[F]],
-    consumedMessages: UnlabelledCounter[F, ConsumeLabel[F]]
+    publishedMessageDuration: UnlabelledHistogram[F, PublishLabel[F]],
+    consumedMessages: UnlabelledCounter[F, ConsumeLabel[F]],
+    consumedMessageDuration: UnlabelledHistogram[F, ConsumeLabel[F]]
 )
 
 object EpimetheusAmqpMetrics {
@@ -54,6 +59,14 @@ object EpimetheusAmqpMetrics {
         Sized(Label("exchange"), Label("routing_key"), Label("outcome")),
         (labelPublishedMessage[F] _).tupled
       )
+      publishedMessageDurations <- Histogram.labelled(
+        registry,
+        prefix |+| sep |+| Name("published_messages_duration_ms"),
+        "Message publish operation duration in milliseconds.",
+        Sized(Label("exchange"), Label("routing_key"), Label("outcome")),
+        (labelPublishedMessage[F] _).tupled
+      )
+
       consumedMessages <- Counter.labelled(
         registry,
         prefix |+| sep |+| Name("consumed_messages"),
@@ -66,9 +79,24 @@ object EpimetheusAmqpMetrics {
         ),
         (labelConsumedMessage[F] _).tupled
       )
+
+      consumedMessageDurations <- Histogram.labelled(
+        registry,
+        prefix |+| sep |+| Name("consumed_messages_duration_ms"),
+        "Message consume handler duration in milliseconds.",
+        Sized(
+          Label("exchange"),
+          Label("routing_key"),
+          Label("result"),
+          Label("outcome")
+        ),
+        (labelConsumedMessage[F] _).tupled
+      )
     } yield EpimetheusAmqpMetrics[F](
       publishedMessages,
-      consumedMessages
+      publishedMessageDurations,
+      consumedMessages,
+      consumedMessageDurations
     )
   }
 
@@ -135,7 +163,7 @@ object EpimetheusAmqpClient {
       apply[F](amqpClient, metrics)
     }
 
-  def apply[F[_]](
+  def apply[F[_]: Clock](
       amqpClient: AmqpClient[F],
       amqpMetrics: EpimetheusAmqpMetrics[F]
   )(implicit M: MonadCancel[F, _]): AmqpClient[F] =
@@ -162,26 +190,9 @@ object EpimetheusAmqpClient {
           shutdownTimeout: FiniteDuration,
           shutdownRetry: FiniteDuration
       ): Resource[F, Unit] = {
-        val meteredHandler = { (del: Delivery) =>
-          M.guaranteeCase(handler(del)) { outcome =>
-            outcome match {
-              case Succeeded(fa) =>
-                fa.flatMap(action =>
-                  amqpMetrics.consumedMessages
-                    .label((del, Some(action), outcome))
-                    .inc
-                )
-              case _ =>
-                amqpMetrics.consumedMessages
-                  .label((del, None, outcome))
-                  .inc
-            }
-          }
-        }
-
         amqpClient.registerConsumer(
           queueName,
-          meteredHandler,
+          meteredHandler(handler),
           exceptionalAction,
           prefetchCount,
           shutdownTimeout,
@@ -192,5 +203,43 @@ object EpimetheusAmqpClient {
       def isConnectionOpen: F[Boolean] =
         amqpClient.isConnectionOpen
 
+      private def meteredHandler(
+          handler: Handler[F, Delivery]
+      ): Handler[F, Delivery] = { (del: Delivery) =>
+        Clock[F].monotonic.flatMap { start =>
+          M.guaranteeCase(handler(del)) { outcome =>
+            Clock[F].monotonic.flatMap { end =>
+              outcome match {
+                case Succeeded(fa) =>
+                  fa.flatMap { action =>
+                    handlerMetrics(del, Some(action), outcome, start, end)
+                  }
+                case _ =>
+                  handlerMetrics(del, None, outcome, start, end)
+              }
+            }
+          }
+        }
+      }
+
+      private def handlerMetrics(
+          del: Delivery,
+          maybeAction: Option[ConsumeAction],
+          outcome: Outcome[F, _, ConsumeAction],
+          start: FiniteDuration,
+          end: FiniteDuration
+      ): F[Unit] = {
+        val labels = (del, maybeAction, outcome)
+        for {
+          _ <- amqpMetrics.consumedMessages
+            .label(labels)
+            .inc
+          _ <- amqpMetrics.consumedMessageDuration
+            .label(labels)
+            .observe((end - start).toMillis)
+        } yield ()
+      }
+
     }
+
 }
