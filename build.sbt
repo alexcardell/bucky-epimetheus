@@ -87,3 +87,10 @@ lazy val docs = project
     )
   )
   .enablePlugins(MdocPlugin)
+
+addCommandAlias("fix", "scalafmtAll;scalafmtSbt;scalafixAll")
+addCommandAlias(
+  "check",
+  List("scalafmtCheckAll", "scalafmtSbtCheck", "scalafix --check")
+    .mkString(";")
+)
