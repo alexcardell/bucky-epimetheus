@@ -1,12 +1,12 @@
-# bucky-prometheus
+# bucky-epimetheus
 
-[![release](https://github.com/alexcardell/bucky-prometheus/actions/workflows/ci.yaml/badge.svg)](https://github.com/alexcardell/bucky-prometheus/actions/workflows/ci.yaml)
-[![version](https://img.shields.io/maven-central/v/io.cardell/bucky-prometheus_2.13)](https://search.maven.org/artifact/io.cardell/bucky-prometheus_2.13)
+[![release](https://github.com/alexcardell/bucky-epimetheus/actions/workflows/ci.yaml/badge.svg)](https://github.com/alexcardell/bucky-epimetheus/actions/workflows/ci.yaml)
+[![version](https://img.shields.io/maven-central/v/io.cardell/bucky-epimetheus_2.13)](https://search.maven.org/artifact/io.cardell/bucky-epimetheus_2.13)
 
 ## Installing 
 
 ```
-libraryDependencies += "io.cardell" %% "bucky-prometheus" % "@VERSION@"
+libraryDependencies += "io.cardell" %% "bucky-epimetheus" % "@VERSION@"
 ```
 
 ## Usage
