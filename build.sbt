@@ -62,7 +62,7 @@ lazy val core = project
     name := s"$repo",
     libraryDependencies ++= Seq(
       "com.itv" %% "bucky-core" % "3.1.0",
-      "io.chrisdavenport" %% "epimetheus" % "0.5.0-M2",
+      "io.chrisdavenport" %% "epimetheus" % "0.5.0",
       "com.disneystreaming" %% "weaver-cats" % "0.8.0" % Test,
       "com.itv" %% "bucky-test" % "3.1.0" % Test,
       "io.circe" %% "circe-core" % "0.14.1" % Test,
