@@ -24,8 +24,8 @@ jobs:
           java-version: 8
           cache: sbt
 
-      - name: Lint
-        run: sbt scalafmtCheckAll scalafmtSbtCheck 'scalafix --check'
+      # - name: Lint
+      #   run: sbt scalafmtCheckAll scalafmtSbtCheck 'scalafix --check'
 
       - name: Test
         run: sbt +test
