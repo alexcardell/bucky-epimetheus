@@ -20,13 +20,13 @@ import com.itv.bucky.consume.Delivery
 import com.itv.bucky.consume.RequeueImmediately
 import com.itv.bucky.decl.Declaration
 import com.itv.bucky.publish.PublishCommand
-import io.chrisdavenport.epimetheus.CollectorRegistry
 import io.chrisdavenport.epimetheus.Counter
 import io.chrisdavenport.epimetheus.Counter.UnlabelledCounter
 import io.chrisdavenport.epimetheus.Histogram
 import io.chrisdavenport.epimetheus.Histogram.UnlabelledHistogram
 import io.chrisdavenport.epimetheus.Label
 import io.chrisdavenport.epimetheus.Name
+import io.chrisdavenport.epimetheus.PrometheusRegistry
 import scala.concurrent.duration.FiniteDuration
 import shapeless.Sized
 
@@ -40,15 +40,15 @@ case class EpimetheusAmqpMetrics[F[_]](
 object EpimetheusAmqpMetrics {
 
   def register[F[_]: Sync](
-      registry: CollectorRegistry[F]
+      registry: PrometheusRegistry[F]
   ): F[EpimetheusAmqpMetrics[F]] =
     register[F](registry, defaultPrefix)
 
   /** Attempt to register relevant AmqpClient metrics with the given
-    * CollectorRegistry
+    * PrometheusRegistry
     */
   def register[F[_]: Sync](
-      registry: CollectorRegistry[F],
+      registry: PrometheusRegistry[F],
       prefix: Name = defaultPrefix
   ): F[EpimetheusAmqpMetrics[F]] = {
     for {
@@ -150,13 +150,13 @@ object EpimetheusAmqpClient {
 
   def apply[F[_]: Sync](
       amqpClient: AmqpClient[F],
-      registry: CollectorRegistry[F]
+      registry: PrometheusRegistry[F]
   ): F[AmqpClient[F]] =
     apply[F](amqpClient, registry, EpimetheusAmqpMetrics.defaultPrefix)
 
   def apply[F[_]: Sync](
       amqpClient: AmqpClient[F],
-      registry: CollectorRegistry[F],
+      registry: PrometheusRegistry[F],
       prefix: Name
   ): F[AmqpClient[F]] =
     EpimetheusAmqpMetrics.register[F](registry, prefix).map { metrics =>
