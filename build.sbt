@@ -28,7 +28,7 @@ ThisBuild / sonatypeCredentialHost := "s01.oss.sonatype.org"
 ThisBuild / versionScheme := Some("early-semver")
 
 lazy val scala2_12 = "2.12.15"
-lazy val scala2_13 = "2.13.8"
+lazy val scala2_13 = "2.13.12"
 // TODO cross publish
 lazy val crossVersions = Seq(scala2_13)
 ThisBuild / crossScalaVersions := crossVersions
@@ -62,7 +62,7 @@ lazy val core = project
     name := s"$repo",
     libraryDependencies ++= Seq(
       "com.itv" %% "bucky-core" % "3.1.0",
-      "io.chrisdavenport" %% "epimetheus" % "0.5.0",
+      "io.chrisdavenport" %% "epimetheus" % "0.6.0-M2",
       "com.disneystreaming" %% "weaver-cats" % "0.8.0" % Test,
       "com.itv" %% "bucky-test" % "3.1.0" % Test,
       "io.circe" %% "circe-core" % "0.14.1" % Test,
